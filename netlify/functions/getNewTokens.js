@@ -1,7 +1,6 @@
 const axios = require("axios");
 
-// ✅ THAY ĐỔI: Sử dụng API tìm kiếm để có kết quả ổn định hơn.
-// Chúng ta sẽ tìm kiếm các cặp có chứa WETH trên mạng Base.
+// Sử dụng API tìm kiếm để có kết quả ổn định hơn.
 const API_URL = `https://api.dexscreener.com/latest/dex/search?q=WETH%20on%20Base`;
 
 exports.handler = async function (event, context) {
@@ -19,29 +18,36 @@ exports.handler = async function (event, context) {
       };
     }
 
-    // Lọc lại một lần nữa để chắc chắn chỉ lấy các cặp trên mạng Base
     const basePairs = response.data.pairs.filter(p => p.chainId === "base");
 
     const sortedPairs = basePairs.sort(
       (a, b) => b.pairCreatedAt - a.pairCreatedAt
     );
     
-    // Lấy địa chỉ của token còn lại trong cặp (không phải WETH)
     const wethAddress = "0x4200000000000000000000000000000000000006";
-    const newTokens = [
-      ...new Set(
-        sortedPairs
-          .slice(0, 100) // Lấy 100 cặp mới nhất để có đủ dữ liệu
-          .map(p => 
-            p.baseToken.address.toLowerCase() === wethAddress ? p.quoteToken.address : p.baseToken.address
-          )
-      ),
-    ].slice(0, 50); // Giới hạn lại 50 kết quả cuối cùng
+
+    // ✅ THAY ĐỔI: Thay vì chỉ lấy địa chỉ, chúng ta sẽ lấy một object
+    // chứa đầy đủ thông tin cần thiết.
+    const newTokensInfo = sortedPairs
+        .slice(0, 100)
+        .map(p => {
+            const token = p.baseToken.address.toLowerCase() === wethAddress ? p.quoteToken : p.baseToken;
+            return {
+                address: token.address,
+                createdAt: p.pairCreatedAt, // Thời gian tạo cặp
+                txns: p.txns.h24.buys + p.txns.h24.sells, // Tổng giao dịch trong 24h
+                volume: p.volume.h24 // Khối lượng giao dịch trong 24h
+            };
+        });
+
+    // Lọc bỏ các token trùng lặp, giữ lại thông tin của cặp mới nhất
+    const uniqueTokens = Array.from(new Map(newTokensInfo.map(item => [item.address, item])).values())
+                             .slice(0, 50);
 
     return {
       statusCode: 200,
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tokens: newTokens }),
+      body: JSON.stringify({ tokens: uniqueTokens }), // Trả về mảng các object
     };
   } catch (error) {
     console.error("❌ Error fetching from Dexscreener:", error.message);

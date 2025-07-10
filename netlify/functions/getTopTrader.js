@@ -1,44 +1,95 @@
 const axios = require("axios");
 
-const CHAIN_NAME = "base";
+// ✅ THAY ĐỔI: Sử dụng API của Bitquery
+// Bạn cần phải thiết lập biến môi trường này trong Netlify UI
+const BITQUERY_API_KEY = process.env.BITQUERY_API_KEY; 
+const BITQUERY_URL = "https://graphql.bitquery.io";
 
 exports.handler = async function (event, context) {
-    const tokenAddress = event.queryStringParameters.address;
-    if (!tokenAddress) {
-        return {
-            statusCode: 400,
-            body: JSON.stringify({ error: "Missing token address." }),
-        };
-    }
+  const tokenAddress = event.queryStringParameters.address;
+  if (!tokenAddress) {
+    return {
+      statusCode: 400,
+      body: JSON.stringify({ error: "Missing token address." }),
+    };
+  }
 
-    try {
-        // 1. Search for the pair address
-        const searchUrl = `https://api.dexscreener.com/latest/dex/search?q=${tokenAddress}`;
-        const searchResponse = await axios.get(searchUrl);
-        const pair = searchResponse.data.pairs.find(p => p.chainId === CHAIN_NAME && p.baseToken.address.toLowerCase() === tokenAddress.toLowerCase());
+  // Lấy ngày trong 30 ngày qua
+  const sinceDate = new Date();
+  sinceDate.setDate(sinceDate.getDate() - 30);
+  const sinceDateString = sinceDate.toISOString().slice(0, 10);
 
-        if (!pair || !pair.pairAddress) {
-            return {
-                statusCode: 404,
-                body: JSON.stringify({ error: "Pair not found." }),
-            };
+  const query = `
+    query ($token: String!, $since: ISO8601DateTime) {
+      ethereum(network: base) {
+        dexTrades(
+          options: {desc: "baseAmount", limit: 100}
+          date: {since: $since}
+          baseCurrency: {is: $token}
+        ) {
+          transaction {
+            txFrom {
+              address
+            }
+          }
+          baseAmount
+          quoteAmount
         }
-
-        // 2. Get transactions for that pair
-        const tradersUrl = `https://api.dexscreener.com/latest/dex/pairs/${CHAIN_NAME}/${pair.pairAddress}`;
-        const tradersResponse = await axios.get(tradersUrl);
-
-        return {
-            statusCode: 200,
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(tradersResponse.data),
-        };
-
-    } catch (error) {
-        console.error("Error fetching top trader:", error);
-        return {
-            statusCode: 500,
-            body: JSON.stringify({ error: "Failed to fetch top trader data." }),
-        };
+      }
     }
+  `;
+
+  const variables = {
+    token: tokenAddress,
+    since: sinceDateString,
+  };
+
+  try {
+    const response = await axios.post(
+      BITQUERY_URL,
+      { query, variables },
+      {
+        headers: {
+          "Content-Type": "application/json",
+          "X-API-KEY": BITQUERY_API_KEY,
+        },
+      }
+    );
+
+    const trades = response.data?.data?.ethereum?.dexTrades || [];
+
+    if (trades.length === 0) {
+      return {
+        statusCode: 200,
+        body: JSON.stringify({ topTraders: [] }),
+      };
+    }
+
+    const traderMap = new Map();
+    for (const trade of trades) {
+      const address = trade.transaction?.txFrom?.address;
+      const amount = parseFloat(trade.baseAmount);
+      if (!address || isNaN(amount)) continue;
+
+      const currentAmount = traderMap.get(address) || 0;
+      traderMap.set(address, currentAmount + amount);
+    }
+
+    const topTraders = Array.from(traderMap.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([address, totalAmount]) => ({ address, totalAmount }));
+
+    return {
+      statusCode: 200,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ topTraders }),
+    };
+  } catch (error) {
+    console.error("❌ Error from Bitquery:", error.message);
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: "Failed to fetch from Bitquery." }),
+    };
+  }
 };
