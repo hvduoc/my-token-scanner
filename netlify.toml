@@ -1,6 +1,5 @@
 [build]
-  command = "npm install"
-  functions = "functions"  # THAY ĐỔI: Đường dẫn đã được đơn giản hóa
+  functions = "functions"
   publish = "public"
 
 [[redirects]]
