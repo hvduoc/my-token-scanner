@@ -153,26 +153,27 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
                 const tradersResponse = await fetch(`${BASE_FUNCTION_URL}/getTopTrader?address=${tokenAddress}`);
                 if (!tradersResponse.ok) throw new Error('Không thể lấy dữ liệu giao dịch');
+                const tradersData = await tradersResponse.json();
                 
-                // ✅ THAY ĐỔI: Xử lý định dạng dữ liệu mới từ BitQuery
-                const { topTraders } = await tradersResponse.json();
-                
-                if (topTraders && topTraders.length > 0) {
-                    let html = '<ul class="space-y-1">';
-                    topTraders.forEach((trader, index) => {
-                        const hunterUrl = `https://basescan.org/address/${trader.address}`;
-                        html += `
-                            <li>
-                                <span class="font-bold">${index + 1}.</span>
-                                <a href="${hunterUrl}" target="_blank" class="text-sm text-blue-600 hover:underline">${trader.address.substring(0,6)}...</a>
-                                <div class="text-xs text-gray-500">KL: ${trader.totalAmount.toFixed(2)}</div>
-                            </li>
-                        `;
-                    });
-                    html += '</ul>';
-                    cell.innerHTML = html;
+                if (tradersData.pair && tradersData.pair.txns && tradersData.pair.txns.buys && tradersData.pair.txns.buys.length > 0) {
+                    const earlyBuys = tradersData.pair.txns.buys.slice(0, 20);
+                    const earlyBuyers = new Set(earlyBuys.map(tx => tx.maker.address));
+
+                    const profitableSellers = tradersData.pair.txns.sells
+                        .filter(tx => earlyBuyers.has(tx.maker.address))
+                        .sort((a, b) => b.amountUSD - a.amountUSD);
+
+                    if (profitableSellers.length > 0) {
+                        const topHunter = profitableSellers[0];
+                        const hunterAddress = topHunter.maker.address;
+                        const hunterUrl = `https://basescan.org/address/${hunterAddress}`;
+                        cell.innerHTML = `<a href="${hunterUrl}" target="_blank" class="text-sm text-blue-600 hover:underline">${hunterAddress.substring(0,6)}...</a>
+                                          <div class="text-xs text-green-600">Bán: $${parseFloat(topHunter.amountUSD).toLocaleString()}</div>`;
+                    } else {
+                        cell.innerHTML = '<div class="text-xs text-yellow-600">Chưa có người chốt lời</div>';
+                    }
                 } else {
-                    cell.innerHTML = '<div class="text-xs text-yellow-600">Không tìm thấy trader</div>';
+                    cell.innerHTML = '<div class="text-xs text-red-500">Không có giao dịch mua</div>';
                 }
             } catch (error) {
                 console.error('Lỗi khi tìm thợ săn:', error);
