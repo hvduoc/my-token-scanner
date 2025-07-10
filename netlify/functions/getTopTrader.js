@@ -1,7 +1,6 @@
 const axios = require("axios");
 
-// ✅ THAY ĐỔI: Sử dụng API của Bitquery
-// Bạn cần phải thiết lập biến môi trường này trong Netlify UI
+// Lấy API Key từ biến môi trường của Netlify
 const BITQUERY_API_KEY = process.env.BITQUERY_API_KEY; 
 const BITQUERY_URL = "https://graphql.bitquery.io";
 
@@ -14,7 +13,7 @@ exports.handler = async function (event, context) {
     };
   }
 
-  // Lấy ngày trong 30 ngày qua
+  // Lấy ngày trong 30 ngày qua để giới hạn phạm vi tìm kiếm
   const sinceDate = new Date();
   sinceDate.setDate(sinceDate.getDate() - 30);
   const sinceDateString = sinceDate.toISOString().slice(0, 10);
@@ -33,7 +32,6 @@ exports.handler = async function (event, context) {
             }
           }
           baseAmount
-          quoteAmount
         }
       }
     }
@@ -65,6 +63,7 @@ exports.handler = async function (event, context) {
       };
     }
 
+    // Tổng hợp khối lượng giao dịch cho mỗi ví
     const traderMap = new Map();
     for (const trade of trades) {
       const address = trade.transaction?.txFrom?.address;
@@ -75,6 +74,7 @@ exports.handler = async function (event, context) {
       traderMap.set(address, currentAmount + amount);
     }
 
+    // Sắp xếp và lấy ra 3 trader hàng đầu
     const topTraders = Array.from(traderMap.entries())
       .sort((a, b) => b[1] - a[1])
       .slice(0, 3)
