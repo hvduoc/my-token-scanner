@@ -149,39 +149,35 @@ document.addEventListener('DOMContentLoaded', () => {
             const button = event.target;
             const tokenAddress = button.dataset.address;
             const cell = button.parentElement;
-            cell.innerHTML = '<div class="text-xs text-gray-500">Đang tìm...</div>';
+            cell.innerHTML = '<div class="text-xs text-gray-500">Đang tìm top ví...</div>';
 
             try {
-                const tradersResponse = await fetch(`${BASE_FUNCTION_URL}/getTopTrader?address=${tokenAddress}`);
-                if (!tradersResponse.ok) throw new Error('Không thể lấy dữ liệu giao dịch');
-                const tradersData = await tradersResponse.json();
-                
-                if (tradersData.pair && tradersData.pair.txns && tradersData.pair.txns.buys && tradersData.pair.txns.buys.length > 0) {
-                    const earlyBuys = tradersData.pair.txns.buys.slice(0, 20);
-                    const earlyBuyers = new Set(earlyBuys.map(tx => tx.maker.address));
+                const topHunters = await findTopHunters(tokenAddress);
 
-                    const profitableSellers = tradersData.pair.txns.sells
-                        .filter(tx => earlyBuyers.has(tx.maker.address))
-                        .sort((a, b) => b.amountUSD - a.amountUSD);
+                // 💾 Lưu kết quả hunter vào localStorage
+                localStorage.setItem(`hunter-${tokenAddress}`, JSON.stringify(topHunters));
 
-                    if (profitableSellers.length > 0) {
-                        const topHunter = profitableSellers[0];
-                        const hunterAddress = topHunter.maker.address;
-                        const hunterUrl = `https://basescan.org/address/${hunterAddress}`;
-                        cell.innerHTML = `<a href="${hunterUrl}" target="_blank" class="text-sm text-blue-600 hover:underline">${hunterAddress.substring(0,6)}...</a>
-                                          <div class="text-xs text-green-600">Bán: $${parseFloat(topHunter.amountUSD).toLocaleString()}</div>`;
-                    } else {
-                        cell.innerHTML = '<div class="text-xs text-yellow-600">Chưa có người chốt lời</div>';
-                    }
-                } else {
-                    cell.innerHTML = '<div class="text-xs text-red-500">Không có giao dịch mua</div>';
+                if (topHunters.length === 0) {
+                    cell.innerHTML = '<div class="text-xs text-yellow-600">Không tìm thấy thợ săn</div>';
+                    return;
                 }
-            } catch (error) {
-                console.error('Lỗi khi tìm thợ săn:', error);
-                cell.innerHTML = `<div class="text-xs text-red-500">${error.message}</div>`;
+
+                cell.innerHTML = topHunters.map(hunter => `
+                    <div class="mb-1">
+                        <a href="https://basescan.org/address/${hunter.address}" target="_blank" class="text-blue-600 hover:underline text-sm">
+                            ${hunter.address.substring(0,6)}...${hunter.address.slice(-4)}
+                        </a>
+                        <div class="text-xs text-green-700">Lãi: $${hunter.profit.toFixed(2)} | Giao dịch: ${hunter.txCount}</div>
+                    </div>
+                `).join('');
+            } catch (err) {
+                console.error('Lỗi khi phân tích hunter:', err);
+                cell.innerHTML = '<div class="text-xs text-red-500">Lỗi khi phân tích</div>';
             }
+
         }
     });
+
     async function callBotDecision(tokenInfo, score, row) {
     const botCell = document.createElement('td');
     botCell.className = "px-3 py-4 text-sm text-gray-600";
@@ -211,5 +207,37 @@ document.addEventListener('DOMContentLoaded', () => {
         console.error("Bot logic error:", err);
     }
     }
+
+    async function findTopHunters(tokenAddress) {
+        const response = await fetch(`/.netlify/functions/getTopTrader?address=${tokenAddress}`);
+        const data = await response.json();
+
+        if (!data.pair || !data.pair.txns || !data.pair.txns.buys || !data.pair.txns.sells) {
+            return [];
+        }
+
+        const earlyBuys = data.pair.txns.buys.slice(0, 20);
+        const earlyBuyers = new Set(earlyBuys.map(tx => tx.maker.address));
+
+        const sellers = data.pair.txns.sells.filter(tx => earlyBuyers.has(tx.maker.address));
+        
+        const hunterProfits = {};
+        sellers.forEach(tx => {
+            const addr = tx.maker.address;
+            hunterProfits[addr] = (hunterProfits[addr] || 0) + parseFloat(tx.amountUSD);
+        });
+
+        const sorted = Object.entries(hunterProfits)
+            .map(([address, profit]) => ({
+                address,
+                profit,
+                txCount: sellers.filter(s => s.maker.address === address).length
+            }))
+            .sort((a, b) => b.profit - a.profit)
+            .slice(0, 3); // Lấy top 3
+
+        return sorted;
+    }
+
 
 });
