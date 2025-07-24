@@ -18,7 +18,7 @@ document.addEventListener('DOMContentLoaded', () => {
         statusContainer.classList.remove('hidden');
         
         try {
-            statusText.textContent = 'Bước 1/2: Đang tìm token mới...';
+            statusText.textContent = 'Bước 1/2: Đang tìm token hot trend...';
             const tokenResponse = await fetch(`${BASE_FUNCTION_URL}/getNewTokens`);
             if (!tokenResponse.ok) throw new Error('Không thể lấy danh sách token mới.');
             const { tokens: newTokens } = await tokenResponse.json();
@@ -141,6 +141,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <td class="px-3 py-4">${liquidityStatus}</td>
             <td class="px-3 py-4 hunter-cell">${hunterCellHtml}</td>
         `;
+        callBotDecision(tokenInfo, score, row);
     }
 
     resultsTable.addEventListener('click', async (event) => {
@@ -181,4 +182,34 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     });
+    async function callBotDecision(tokenInfo, score, row) {
+    const botCell = document.createElement('td');
+    botCell.className = "px-3 py-4 text-sm text-gray-600";
+    botCell.textContent = "⏳ Đang kiểm tra bot...";
+    row.appendChild(botCell);
+
+    try {
+        const botResponse = await fetch(`${BASE_FUNCTION_URL}/myBotLogic`, {
+        method: 'POST',
+        body: JSON.stringify({
+            address: tokenInfo.address,
+            score: score,
+            volume: tokenInfo.volume,
+            txns: tokenInfo.txns,
+            is_honeypot: false  // bạn có thể truyền securityData.is_honeypot nếu muốn chính xác
+        })
+        });
+
+        const result = await botResponse.json();
+        if (result.action === "BUY") {
+        botCell.innerHTML = `<span class="text-green-600 font-bold">✅ MUA</span><br><span class="text-xs text-stone-500">${result.reason}</span>`;
+        } else {
+        botCell.innerHTML = `<span class="text-red-500 font-semibold">❌ BỎ QUA</span><br><span class="text-xs text-stone-400">${result.reason}</span>`;
+        }
+    } catch (err) {
+        botCell.innerHTML = `<span class="text-yellow-600">⚠️ Lỗi bot</span>`;
+        console.error("Bot logic error:", err);
+    }
+    }
+
 });

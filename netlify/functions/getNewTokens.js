@@ -1,8 +1,7 @@
 const axios = require("axios");
 
-// ✅ THAY ĐỔI: Sử dụng API tìm kiếm để có kết quả ổn định và chính xác hơn.
-// Chúng ta sẽ tìm kiếm các cặp có chứa WETH trên mạng Base.
-const API_URL = `https://api.dexscreener.com/latest/dex/search?q=WETH%20on%20Base`;
+// ✅ THAY ĐỔI: Tìm kiếm các cặp dựa trên khối lượng giao dịch cao nhất để bắt trend
+const API_URL = `https://api.dexscreener.com/latest/dex/search?q=base%20volume%20>10000`;
 
 exports.handler = async function (event, context) {
   try {
@@ -19,28 +18,33 @@ exports.handler = async function (event, context) {
       };
     }
 
-    // Lọc lại một lần nữa để chắc chắn chỉ lấy các cặp trên mạng Base
-    const basePairs = response.data.pairs.filter(p => p.chainId === "base");
+    // Lọc các cặp giao dịch chỉ trên mạng "base" và có volume > 10k
+    const basePairs = response.data.pairs.filter(p => p.chainId === "base" && p.volume.h24 > 10000);
 
+    // Sắp xếp các cặp theo khối lượng giao dịch 24h, cao nhất lên đầu
     const sortedPairs = basePairs.sort(
-      (a, b) => b.pairCreatedAt - a.pairCreatedAt
+      (a, b) => b.volume.h24 - a.volume.h24
     );
     
-    // Lấy địa chỉ của token còn lại trong cặp (không phải WETH)
     const wethAddress = "0x4200000000000000000000000000000000000006";
+    const usdcAddress = "0x833589fcd6ed6e08f4c7c32d4f71b54bda02913";
+
+    // Lấy thông tin chi tiết cho mỗi token
     const newTokensInfo = sortedPairs
-        .slice(0, 100) // Lấy 100 cặp mới nhất để có đủ dữ liệu
         .map(p => {
-            const token = p.baseToken.address.toLowerCase() === wethAddress ? p.quoteToken : p.baseToken;
+            let targetToken = p.baseToken;
+            if ([wethAddress, usdcAddress.toLowerCase()].includes(p.baseToken.address.toLowerCase())) {
+                targetToken = p.quoteToken;
+            }
+            
             return {
-                address: token.address,
+                address: targetToken.address,
                 createdAt: p.pairCreatedAt,
                 txns: p.txns.h24.buys + p.txns.h24.sells,
                 volume: p.volume.h24
             };
         });
 
-    // Lọc bỏ các token trùng lặp, giữ lại thông tin của cặp mới nhất
     const uniqueTokens = Array.from(new Map(newTokensInfo.map(item => [item.address, item])).values())
                              .slice(0, 50);
 
