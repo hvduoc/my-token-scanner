@@ -239,5 +239,39 @@ document.addEventListener('DOMContentLoaded', () => {
         return sorted;
     }
 
+    document.getElementById('show-top-hunters').addEventListener('click', () => {
+        const container = document.getElementById('hunter-results');
+        const topHunterBox = document.getElementById('top-hunter-logs');
+
+        // Lấy dữ liệu từ localStorage
+        const allKeys = Object.keys(localStorage).filter(k => k.startsWith('hunter-'));
+        const hunterMap = new Map();
+
+        for (const key of allKeys) {
+            const hunters = JSON.parse(localStorage.getItem(key));
+            hunters.forEach(h => {
+                const prev = hunterMap.get(h.address) || { totalProfit: 0, count: 0 };
+                prev.totalProfit += h.profit || 0;
+                prev.count += 1;
+                hunterMap.set(h.address, prev);
+            });
+        }
+
+        const sorted = Array.from(hunterMap.entries())
+            .map(([addr, stat]) => ({ address: addr, ...stat }))
+            .sort((a, b) => b.totalProfit - a.totalProfit)
+            .slice(0, 5); // Top 5
+
+        container.innerHTML = sorted.map(h =>
+            `<div class="mb-2 border-b pb-2">
+                <div class="font-semibold text-blue-800">${h.address}</div>
+                <div class="text-sm text-gray-600">Lãi: $${h.totalProfit.toFixed(2)} | Lần xuất hiện: ${h.count}</div>
+                <a href="https://basescan.org/address/${h.address}" target="_blank" class="text-green-600 underline text-xs">Basescan</a>
+            </div>`
+        ).join('');
+
+        topHunterBox.classList.remove('hidden');
+    });
+
 
 });
